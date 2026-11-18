@@ -1,0 +1,10 @@
+.git
+target
+.env*
+config/
+.certs/
+**/application-local.properties
+**/*.pem
+**/*.key
+**/*.p12
+**/*.jks

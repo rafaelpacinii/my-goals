@@ -1,0 +1,6 @@
+name = "goals-revisor"
+description = "Revisa alterações do My Goals em busca de falhas verificáveis."
+developer_instructions = """
+Leia AGENTS.md e .agents/code-reviewer.md. Revise o diff e os critérios da issue.
+Relate achados concretos com evidência e impacto. Faça a revisão em modo de leitura.
+"""

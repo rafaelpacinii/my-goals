@@ -1,0 +1,18 @@
+name: Erro
+description: Relatar um comportamento incorreto que pode ser reproduzido.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: reproducao
+    attributes:
+      label: Passos para reproduzir
+      description: Inclua o ambiente e a versão. Oculte dados pessoais e credenciais.
+    validations:
+      required: true
+  - type: textarea
+    id: resultado
+    attributes:
+      label: Resultado observado e resultado esperado
+    validations:
+      required: true

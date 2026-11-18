@@ -1,0 +1,86 @@
+@startuml 03-diagrama-casos-de-uso
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam shadow false
+skinparam defaultFontName "Inter"
+
+title Diagrama de Casos de Uso — Plataforma de Metas, Objetivos e Estatísticas
+
+actor "Usuário\n(Proprietário / Criador)" as User
+actor "Membro Convidado\n(Editor)" as Editor
+actor "Membro Convidado\n(Viewer)" as Viewer
+actor "Keycloak IdP\n(Autenticação OIDC)" as Keycloak <<Sistema Externo>>
+actor "Object Storage\n(S3 compatível)" as Storage <<Sistema Externo>>
+actor "Scheduler / Cron\n(Quarkus)" as Cron <<Timer Interno>>
+
+' Relação de Herança entre Atores
+User --|> Editor : possui todas as permissões de escrita
+Editor --|> Viewer : possui todas as permissões de leitura
+
+rectangle "Plataforma de Metas e Estatísticas (Next.js BFF + Quarkus API)" {
+
+  package "1. Autenticação e Identidade" {
+    usecase "UC01.1 Autenticar Usuário\n(Login Nativo via BFF/Quarkus)" as UC_Login
+    usecase "UC01.2 Cadastrar Conta e\nRecuperar Senha" as UC_Register
+    usecase "UC01.3 Renovar Sessão\n(Refresh Token Automático)" as UC_Refresh
+  }
+
+  package "2. Gestão de Metas e Correlações" {
+    usecase "UC02.1 Criar Meta via\nTemplate Padrão" as UC_CreateTemplate
+    usecase "UC02.2 Criar Meta 100% Personalizada\n(Multi-Métricas)" as UC_CreateCustom
+    usecase "UC02.3 Configurar Métricas da Meta\n(Ex.: Km, Tempo, Páginas, R$)" as UC_ConfigMetrics
+    usecase "UC03.1 Vincular Metas Correlacionadas\n(Soma ou Peso Percentual)" as UC_LinkGoals
+    usecase "UC03.2 Propagar Progresso\npara Metas-Pai" as UC_Propagate
+  }
+
+  package "3. Execução, Logs Ricos e Ciclos" {
+    usecase "UC04.1 Registrar Log de Progresso\n(Métricas + Descrição)" as UC_Log
+    usecase "UC04.2 Anexar Imagens ao Log\n(Presigned URL)" as UC_UploadImg
+    usecase "UC04.3 Encerrar Ciclo Recorrente\ne Arquivar Snapshot" as UC_CloseCycle
+  }
+
+  package "4. Grupos e Compartilhamento" {
+    usecase "UC05.1 Gerenciar Grupo de Metas" as UC_ManageGroup
+    usecase "UC05.2 Compartilhar Grupo e\nDefinir Permissão (Viewer/Editor)" as UC_ShareGroup
+  }
+
+  package "5. Estatísticas e Calendário Heatmap" {
+    usecase "UC06.1 Consultar Calendário Heatmap\n(Dia / Semana / Mês / Ano)" as UC_Heatmap
+    usecase "UC06.2 Visualizar Estatísticas\npor Meta ou Grupo" as UC_Stats
+    usecase "UC06.3 Consultar Histórico de Logs\ne Galeria de Fotos" as UC_Timeline
+  }
+}
+
+' Associações dos Atores Primários
+User --> UC_Login
+User --> UC_Register
+User --> UC_CreateTemplate
+User --> UC_CreateCustom
+User --> UC_LinkGoals
+User --> UC_ManageGroup
+User --> UC_ShareGroup
+
+Editor --> UC_Log
+
+Viewer --> UC_Heatmap
+Viewer --> UC_Stats
+Viewer --> UC_Timeline
+
+' Associações dos Atores Secundários / Sistemas
+UC_Login --> Keycloak
+UC_Register --> Keycloak
+UC_Refresh --> Keycloak
+UC_UploadImg --> Storage
+Cron --> UC_CloseCycle
+
+' Relacionamentos <<include>> e <<extend>> e Generalização
+UC_CreateTemplate --|> UC_CreateCustom : <<generalization>>
+UC_CreateCustom ..> UC_ConfigMetrics : <<include>>
+UC_LinkGoals <.. UC_CreateCustom : <<extend>>\n(se possuir meta-pai)
+
+UC_Log ..> UC_Propagate : <<include>>\n(recalcula ciclo e vínculos)
+UC_UploadImg ..> UC_Log : <<extend>>\n(se usuário anexar fotos)
+
+UC_ManageGroup <.. UC_ShareGroup : <<extend>>
+@enduml

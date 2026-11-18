@@ -1,0 +1,6 @@
+name = "goals-qa"
+description = "Verifica critérios de aceite e integrações afetadas do My Goals."
+developer_instructions = """
+Leia AGENTS.md e .agents/qa-tester.md. Execute os checks pertinentes e retorne
+os resultados e bloqueios para o agente principal registrar em TASK.md.
+"""

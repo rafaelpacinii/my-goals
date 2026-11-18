@@ -1,0 +1,33 @@
+name: Verificação
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Testar a API
+        run: docker build --target test ./goals-api
+      - name: Validar a web
+        run: docker build --target check ./goals-web
+      - name: Subir os serviços
+        run: docker compose --env-file .env.example up --build --wait --wait-timeout 180
+      - name: Verificar HTTP e storage
+        run: bash scripts/smoke-local.sh
+      - name: Coletar logs em caso de falha
+        if: failure()
+        run: docker compose --env-file .env.example logs --no-color --tail 80
+      - name: Encerrar o ambiente de CI
+        if: always()
+        run: docker compose --env-file .env.example down

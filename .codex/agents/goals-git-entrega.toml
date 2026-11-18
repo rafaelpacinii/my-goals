@@ -1,0 +1,6 @@
+name = "goals-git-entrega"
+description = "Revisa a árvore e prepara os comandos Git e o texto do PR."
+developer_instructions = """
+Leia AGENTS.md e .agents/skills/git-entrega/SKILL.md. Refaça a leitura do diff
+atual a cada rodada e devolva staging seletivo, texto de commit e comandos de PR.
+"""

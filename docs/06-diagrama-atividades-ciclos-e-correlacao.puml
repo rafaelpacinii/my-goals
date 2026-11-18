@@ -1,0 +1,79 @@
+@startuml 06-diagrama-atividades-ciclos-e-correlacao
+skinparam shadow false
+skinparam defaultFontName "Inter"
+skinparam conditionStyle inside
+
+title Diagrama de Atividades com Raias — Lançamento de Log, Correlação de Metas e Virada de Ciclo
+
+|Usuário / Editor (Next.js)|
+start
+:Acessa Meta ou Grupo de Metas;
+:Aciona "Novo Log de Progresso";
+:Preenche valores das Métricas da Meta\n(ex.: Km + Tempo, Valor R$, Páginas ou Check);
+:Escreve Descrição/Diário e seleciona Imagens (opcional);
+
+|Next.js BFF|
+if (Possui imagens anexadas?) then (Sim)
+  :Solicita Presigned URL ao Quarkus;
+  :Entrega URLs assinadas e chaves à interface;
+  |Usuário / Editor (Next.js)|
+  :Envia as fotos diretamente ao Object Storage;
+  :Confirma o log com as chaves dos objetos;
+else (Não)
+endif
+|Next.js BFF|
+:Envia payload do Log com Bearer Token para a API Quarkus;
+
+|Quarkus API (Motor de Metas)|
+:Valida Token JWT (JWKS) e permissão no Grupo;
+if (Usuário é OWNER ou EDITOR?) then (Não [VIEWER])
+  :Retorna HTTP 403 Forbidden;
+  stop
+else (Sim)
+endif
+
+:Valida preenchimento das métricas obrigatórias (isRequiredOnLog);
+:Salva GoalLog, GoalLogMetricValues e GoalLogAttachments;
+
+fork
+  :Agrega métricas informativas\n(INFORMATIONAL_ONLY)\npara gráficos de evolução da meta;
+fork again
+  :Avalia métricas obrigatórias de sucesso\n(CONDITION_REQUIRED) + tipo da meta\n(BINARY, ACCUMULATIVE, TARGET_VARIATION, FREQUENCY);
+  :Atualiza % de conclusão do ciclo atual\n(GoalCycleSnapshot);
+end fork
+
+if (Meta possui vínculo de saída em GoalLink?) then (Sim)
+  repeat
+    if (Modo de Propagação do Vínculo?) then (SUM_VALUE)
+      :Soma valor lançado diretamente\nna métrica equivalente da Meta-Pai;
+    else (PERCENTAGE_WEIGHT)
+      :Propaga % de conclusão ponderado\npelo peso (contributionWeight) para a Meta-Pai;
+    endif
+    :Recalcula GoalCycleSnapshot da Meta-Pai;
+  repeat while (Meta-Pai também alimenta outra Meta-Avó?) is (Sim) not (Não)
+else (Não)
+endif
+
+:Recalcula pontuação percentual do período (Dia/Semana/Mês/Ano)\ne classifica faixa de cor do Calendário Heatmap\n(0-10% | 11-40% | 41-70% | 71-99% | 100%);
+
+|Usuário / Editor (Next.js)|
+:Visualiza feedback imediato, galeria do Log\ne Calendário Heatmap atualizado;
+detach
+
+|Scheduler / Cron (Quarkus)|
+:Evento Temporizado: Verificação de Fim de Ciclo\n(respeitando Timezone do Usuário)<<acceptEvent>>;
+:Seleciona metas recorrentes (Diárias, Semanais, Mensais, Anuais, Custom)\ncujo cycleEndDate foi atingido;
+
+|Quarkus API (Motor de Metas)|
+repeat :Para cada meta com ciclo encerrado;
+  :Consolida métricas finais do ciclo em JSONB;
+  if (completionPercentage >= 100%?) then (Sim)
+    :Marca GoalCycleSnapshot como COMPLETED\ne incrementa contador de Streak (Ofensiva);
+  else (Não)
+    :Marca GoalCycleSnapshot como FAILED / ARCHIVED\ne registra histórico imutável do período;
+  endif
+  :Cria novo GoalCycleSnapshot (status = ACTIVE)\ncom contadores zerados para o próximo período;
+repeat while (Existem mais ciclos vencidos?) is (Sim) not (Não)
+
+stop
+@enduml

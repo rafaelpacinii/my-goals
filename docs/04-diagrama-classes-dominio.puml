@@ -1,0 +1,237 @@
+@startuml 04-diagrama-classes-dominio
+skinparam classAttributeIconSize 0
+skinparam shadow false
+skinparam defaultFontName "Inter"
+skinparam linetype ortho
+
+title Diagrama de Classes / Modelo de Domínio (Quarkus / Hibernate Panache + PostgreSQL)
+
+' ================= ENUMS =================
+enum GoalCategory {
+  FINANCIAL
+  PERSONAL
+  PROFESSIONAL
+  HEALTH_FITNESS
+  CUSTOM
+}
+
+enum TrackingType {
+  BINARY
+  ACCUMULATIVE
+  TARGET_VARIATION
+  FREQUENCY
+}
+
+enum RecurrenceType {
+  ONE_TIME
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+  CUSTOM_DAYS
+}
+
+enum MetricDataType {
+  DECIMAL
+  INTEGER
+  CURRENCY
+  DURATION_MINUTES
+  BOOLEAN
+  TEXT
+}
+
+enum MetricAggregation {
+  SUM
+  LAST_VALUE
+  AVERAGE
+  MIN
+  MAX
+  COUNT
+}
+
+enum MetricEvaluationRole {
+  CONDITION_REQUIRED
+  INFORMATIONAL_ONLY
+}
+
+enum LinkPropagationMode {
+  SUM_VALUE
+  PERCENTAGE_WEIGHT
+}
+
+enum GroupRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+enum CycleStatus {
+  ACTIVE
+  COMPLETED
+  FAILED
+  ARCHIVED
+}
+
+' ================= ENTIDADES =================
+class User {
+  + id: UUID <<PK>>
+  + keycloakSubjectId: String <<UK>>
+  + name: String
+  + email: String <<UK>>
+  + avatarUrl: String?
+  + timezone: String = "America/Araguaina"
+  + createdAt: OffsetDateTime
+}
+
+class GoalTemplate {
+  + id: UUID <<PK>>
+  + code: String <<UK>>
+  + name: String
+  + description: String
+  + defaultCategory: GoalCategory
+  + defaultTrackingType: TrackingType
+  + defaultRecurrence: RecurrenceType
+  + presetMetricsJson: JSONB
+  + isSystemDefault: Boolean
+}
+
+class GoalGroup {
+  + id: UUID <<PK>>
+  + ownerId: UUID <<FK>>
+  + name: String
+  + description: String?
+  + icon: String?
+  + colorHex: String?
+  + isShared: Boolean
+  + createdAt: OffsetDateTime
+  --
+  + calculateGroupCompletionRate(period): BigDecimal
+}
+
+class GoalGroupMember {
+  + id: UUID <<PK>>
+  + groupId: UUID <<FK>>
+  + userId: UUID <<FK>>
+  + role: GroupRole
+  + joinedAt: OffsetDateTime
+  --
+  + canEdit(): Boolean
+}
+
+class Goal {
+  + id: UUID <<PK>>
+  + ownerId: UUID <<FK>>
+  + groupId: UUID? <<FK>>
+  + templateId: UUID? <<FK>>
+  + title: String
+  + description: String?
+  + category: GoalCategory
+  + customCategoryName: String?
+  + trackingType: TrackingType
+  + recurrenceType: RecurrenceType
+  + customIntervalDays: Integer?
+  + targetExecutionsPerCycle: Integer?
+  + startDate: LocalDate
+  + targetEndDate: LocalDate?
+  + isActive: Boolean
+  + createdAt: OffsetDateTime
+  --
+  + evaluateCurrentCycleProgress(): BigDecimal
+}
+
+class GoalMetricDefinition {
+  + id: UUID <<PK>>
+  + goalId: UUID <<FK>>
+  + name: String
+  + unitLabel: String
+  + dataType: MetricDataType
+  + aggregationType: MetricAggregation
+  + evaluationRole: MetricEvaluationRole
+  + isRequiredOnLog: Boolean
+  + initialValue: BigDecimal?
+  + targetValue: BigDecimal?
+  + weightInGoal: BigDecimal = 1.0
+  + displayOrder: Integer
+}
+
+class GoalLink {
+  + id: UUID <<PK>>
+  + sourceChildGoalId: UUID <<FK>>
+  + targetParentGoalId: UUID <<FK>>
+  + sourceMetricId: UUID? <<FK>>
+  + targetMetricId: UUID? <<FK>>
+  + propagationMode: LinkPropagationMode
+  + contributionWeight: BigDecimal = 1.0
+  + createdAt: OffsetDateTime
+}
+
+class GoalCycleSnapshot {
+  + id: UUID <<PK>>
+  + goalId: UUID <<FK>>
+  + cycleIndex: Integer
+  + cycleStartDate: LocalDate
+  + cycleEndDate: LocalDate
+  + status: CycleStatus
+  + executionsCount: Integer
+  + completionPercentage: BigDecimal
+  + consolidatedMetricsJson: JSONB
+  + closedAt: OffsetDateTime?
+}
+
+class GoalLog {
+  + id: UUID <<PK>>
+  + goalId: UUID <<FK>>
+  + cycleId: UUID <<FK>>
+  + authorUserId: UUID <<FK>>
+  + referenceDate: LocalDate
+  + loggedAt: OffsetDateTime
+  + description: Text?
+  + isCompletedCheck: Boolean = true
+}
+
+class GoalLogMetricValue {
+  + id: UUID <<PK>>
+  + goalLogId: UUID <<FK>>
+  + metricDefinitionId: UUID <<FK>>
+  + numericValue: BigDecimal?
+  + durationSeconds: Long?
+  + booleanValue: Boolean?
+  + textValue: String?
+}
+
+class GoalLogAttachment {
+  + id: UUID <<PK>>
+  + goalLogId: UUID <<FK>>
+  + storageObjectKey: String
+  + publicOrPresignedUrl: String
+  + mimeType: String
+  + fileSizeBytes: Long
+  + caption: String?
+  + displayOrder: Integer
+  + uploadedAt: OffsetDateTime
+}
+
+' ================= RELACIONAMENTOS =================
+User "1" --> "0..*" Goal : cria / possui >
+User "1" --> "0..*" GoalGroup : é proprietário >
+User "1" --> "0..*" GoalGroupMember : participa >
+GoalGroup "1" *-- "1..*" GoalGroupMember : controla acesso >
+GoalGroup "0..1" o-- "0..*" Goal : agrupa >
+
+GoalTemplate "0..1" <-- "0..*" Goal : baseia-se em <
+
+Goal "1" *-- "1..*" GoalMetricDefinition : define campos >
+Goal "1" *-- "1..*" GoalCycleSnapshot : possui ciclos >
+Goal "1" *-- "0..*" GoalLog : recebe registros >
+GoalCycleSnapshot "1" o-- "0..*" GoalLog : consolida no período >
+
+Goal "1 (filha)" --> "0..*" GoalLink : alimenta >
+Goal "1 (pai)" <-- "0..*" GoalLink : depende de <
+GoalMetricDefinition "0..1" <-- "0..*" GoalLink : mapeia unidade <
+
+User "1" --> "0..*" GoalLog : registra como autor >
+GoalLog "1" *-- "0..*" GoalLogMetricValue : armazena valores >
+GoalMetricDefinition "1" <-- "0..*" GoalLogMetricValue : refere-se a <
+GoalLog "1" *-- "0..*" GoalLogAttachment : contém fotos >
+
+@enduml

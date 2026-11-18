@@ -1,0 +1,24 @@
+name: Entrega
+description: Planejar uma funcionalidade, mudança técnica ou etapa da infraestrutura.
+title: "[Entrega] "
+body:
+  - type: textarea
+    id: objetivo
+    attributes:
+      label: Objetivo e contexto
+      description: Descreva o resultado esperado e cite RF, UC ou história quando houver.
+    validations:
+      required: true
+  - type: textarea
+    id: aceite
+    attributes:
+      label: Critérios de aceite
+      description: Liste comportamentos verificáveis e evidências esperadas.
+      placeholder: "- [ ] Resultado observável"
+    validations:
+      required: true
+  - type: textarea
+    id: dependencias
+    attributes:
+      label: Dependências e impacto
+      description: Referencie issues bloqueadoras e contratos, migrações ou diagramas afetados.

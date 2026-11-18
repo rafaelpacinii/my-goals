@@ -1,0 +1,86 @@
+@startuml 05-diagrama-sequencia-autenticacao-e-logs
+autonumber
+skinparam shadow false
+skinparam defaultFontName "Inter"
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+
+title Diagrama de Sequência Dinâmico — Autenticação OIDC via BFF/Quarkus e Registro de Log Multi-Métrica
+
+actor "Usuário / Editor" as User
+boundary "Next.js UI\n(Tailwind + shadcn)" as UI
+control "Next.js Server\n(BFF / Server Actions)" as BFF
+control "Quarkus API\n(Auth & Goal Service)" as Quarkus
+participant "Keycloak IdP\n(OIDC / Admin API)" as Keycloak
+participant "Object Storage\n(S3 compatível)" as S3
+database "PostgreSQL\n(Domínio + Snapshots)" as DB
+
+== Fase 1: Login Nativo via BFF + Quarkus Proxy (Caminho B — OIDC Direct Grant) ==
+
+User -> UI : Preenche e-mail e senha em /login e clica em "Entrar"
+UI -> BFF : Server Action loginAction(email, password)
+BFF -> Quarkus : POST /api/v1/auth/login { email, password }
+Quarkus -> Keycloak : POST /realms/{realm}/protocol/openid-connect/token\n(grant_type=password, client_id, client_secret, username, password)
+
+alt Credenciais Válidas
+  Keycloak --> Quarkus : 200 OK { access_token (JWT), refresh_token, expires_in }
+  Quarkus -> DB : UPSERT User (keycloakSubjectId, email, name)
+  DB --> Quarkus : userId confirmado
+  Quarkus --> BFF : 200 OK { accessToken, refreshToken, expiresIn, userProfile }
+  BFF -> BFF : Grava access_token e refresh_token em\nCookies HttpOnly, Secure, SameSite=Lax
+  BFF --> UI : Redireciona para /dashboard (HTML SSR populado)
+else Credenciais Inválidas
+  Keycloak --> Quarkus : 401 Unauthorized (invalid_grant)
+  Quarkus --> BFF : 401 { error: "E-mail ou senha incorretos" }
+  BFF --> UI : Exibe alerta de erro preservando o e-mail
+end
+
+== Fase 2: Registro de Log com Múltiplas Métricas, Descrição, Imagens e Propagação ==
+
+User -> UI : Abre meta (ex.: "Correr 3x na semana"), preenche:\n- Métrica 1: 5.2 km | Métrica 2: 28 min\n- Descrição + Seleciona 2 Fotos
+UI -> BFF : Solicita envio do Log com arquivos
+
+opt Usuário selecionou imagens para o Log
+  BFF -> Quarkus : POST /api/v1/uploads/presign (Bearer <access_token>)
+  Quarkus -> Quarkus : Valida JWT localmente (JWKS) + Verifica Permissão (OWNER / EDITOR)
+  Quarkus -> Quarkus : Assina PUT URLs para o host público (expiração 5 min)
+  Quarkus --> BFF : Retorna { uploadUrls[], objectKeys[] }
+  BFF --> UI : Entrega URLs + chaves
+  UI -> S3 : PUT binário direto pelo navegador
+  S3 --> UI : 200 OK (upload concluído)
+  UI -> BFF : Confirma o log com as chaves dos objetos
+end
+
+BFF -> Quarkus : POST /api/v1/goals/{goalId}/logs\nAuthorization: Bearer <access_token>\n{ referenceDate, description, metrics: [{id, 5.2}, {id, 28}], attachments: [objectKeys] }
+
+alt Access Token Expirado durante a navegação
+  Quarkus --> BFF : 401 Token Expired
+  BFF -> Quarkus : POST /api/v1/auth/refresh { refreshToken (do Cookie HttpOnly) }
+  Quarkus -> Keycloak : POST /protocol/openid-connect/token (grant_type=refresh_token)
+  Keycloak --> Quarkus : Novo { access_token, refresh_token }
+  Quarkus --> BFF : 200 OK (Novos Tokens)
+  BFF -> BFF : Atualiza Cookies HttpOnly transparentemente
+  BFF -> Quarkus : Reenvia POST /api/v1/goals/{goalId}/logs com novo Bearer Token
+end
+
+Quarkus -> DB : BEGIN TRANSACTION
+Quarkus -> DB : Valida GoalGroupMemberRole (bloqueia se VIEWER -> 403)
+Quarkus -> DB : INSERT GoalLog + GoalLogMetricValue[] + GoalLogAttachment[]
+Quarkus -> DB : Recalcula GoalCycleSnapshot da meta atual\n(combina frequência 2/3 + métricas CONDITION_REQUIRED)
+
+opt Meta possui vínculos de correlação (GoalLink -> Meta-Pai)
+  Quarkus -> DB : Busca GoalLinks onde sourceChildGoalId = goalId
+  loop Para cada Meta-Pai vinculada (DAG sem ciclos)
+    alt propagationMode == SUM_VALUE
+      Quarkus -> DB : Incrementa valor da métrica correspondente na Meta-Pai
+    else propagationMode == PERCENTAGE_WEIGHT
+      Quarkus -> DB : Recalcula média ponderada de conclusão da Meta-Pai
+    end
+    Quarkus -> DB : Atualiza GoalCycleSnapshot da Meta-Pai
+  end
+end
+
+Quarkus -> DB : COMMIT TRANSACTION
+Quarkus --> BFF : 201 Created { log, updatedCycleProgress, parentGoalsUpdated[], heatmapDayScore }
+BFF --> UI : Revalida cache e atualiza barras de progresso, timeline de fotos e Heatmap
+@enduml
