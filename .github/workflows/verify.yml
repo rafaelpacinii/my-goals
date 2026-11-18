@@ -17,17 +17,40 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Selecionar verificações pelas mudanças
+        id: changes
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          base_sha="$PUSH_BEFORE"
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            base_sha=$(git rev-parse HEAD^1)
+          fi
+          bash scripts/ci-changes.sh "$base_sha" HEAD >> "$GITHUB_OUTPUT"
       - name: Testar a API
+        if: steps.changes.outputs.api == 'true'
         run: docker build --target test ./goals-api
       - name: Validar a web
+        if: steps.changes.outputs.web == 'true'
         run: docker build --target check ./goals-web
+      - name: Compilar a web
+        if: steps.changes.outputs.web == 'true' && steps.changes.outputs.integration == 'false'
+        run: docker build --target build ./goals-web
       - name: Subir os serviços
+        id: compose
+        if: steps.changes.outputs.integration == 'true'
         run: docker compose --env-file .env.example up --build --wait --wait-timeout 180
       - name: Verificar HTTP e storage
+        if: steps.changes.outputs.integration == 'true'
         run: bash scripts/smoke-local.sh
       - name: Coletar logs em caso de falha
-        if: failure()
+        if: failure() && (steps.compose.outcome == 'success' || steps.compose.outcome == 'failure')
         run: docker compose --env-file .env.example logs --no-color --tail 80
       - name: Encerrar o ambiente de CI
-        if: always()
+        if: >-
+          always() &&
+          (steps.compose.outcome == 'success' ||
+           steps.compose.outcome == 'failure' ||
+           steps.compose.outcome == 'cancelled')
         run: docker compose --env-file .env.example down

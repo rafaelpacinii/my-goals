@@ -1,4 +1,7 @@
 FROM eclipse-temurin:17-jdk-jammy AS source
+# Mantém o download do Maven Wrapper no formato ZIP definido pelo checksum.
+RUN apt-get update && apt-get install -y --no-install-recommends unzip \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
 COPY .mvn/ .mvn/
 COPY --chmod=755 mvnw .
@@ -6,7 +9,7 @@ COPY pom.xml .
 COPY src/ src/
 
 FROM source AS test
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -ntp test
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -ntp verify
 
 FROM source AS build
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -ntp package -DskipTests
