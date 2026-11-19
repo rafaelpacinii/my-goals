@@ -49,5 +49,24 @@ Use os formulários [Entrega](../.github/ISSUE_TEMPLATE/entrega.yml) e
 No primeiro envio, publique o commit inicial em `main` para criar a base dos PRs futuros.
 Configure a verificação obrigatória e as opções de merge quando houver um repositório remoto.
 
+## CI por arquivos alterados
+
+O [workflow de verificação](../.github/workflows/verify.yml) mantém o mesmo check
+em todos os PRs para `main` e nos pushes nessa branch. O PR é avaliado pelo diff
+entre a base e o merge testado pelo GitHub. Em um push, o diff cobre todo o intervalo
+publicado, inclusive quando há vários commits.
+
+| Caminhos alterados | Verificações executadas |
+| --- | --- |
+| Código ou configuração de `goals-api/` | Testes e empacotamento Quarkus |
+| Código ou configuração de `goals-web/` | Lint, tipagem e build Next.js |
+| Compose, infraestrutura, exemplo de ambiente ou script de smoke | Integração HTTP e S3 no Compose |
+| Dockerfile ou `.dockerignore` de um módulo | Verificações do módulo e teste de integração |
+| Workflow, seletor de verificações ou `.gitattributes` | Todas as verificações |
+| Apenas documentação | Seleção dos caminhos alterados |
+
+Quando o GitHub não fornece um commit anterior disponível, o workflow executa todas
+as verificações para cobrir a mudança.
+
 Referências do GitHub sobre [milestones](https://docs.github.com/en/issues/using-labels-and-milestones-to-track-work/creating-and-editing-milestones-for-issues-and-pull-requests)
 e [fechamento de issues por PR](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue).
